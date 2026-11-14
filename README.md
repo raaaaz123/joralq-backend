@@ -94,7 +94,7 @@ All routes except `/health` need `Authorization: Bearer <Supabase access token>`
 
 ## Local setup
 
-Requirements: Node 20+, a Supabase project (free tier is fine). For tests: a local Postgres 14+.
+Requirements: Node 22+, a Supabase project (free tier is fine). For tests: a local Postgres 14+.
 
 ### 1. Database
 
