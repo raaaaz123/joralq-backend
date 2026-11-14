@@ -16,7 +16,7 @@ async function main() {
   await c.connect();
   const { rows } = await c.query(`select 1 from information_schema.schemata where schema_name = 'auth'`);
   const hasAuth = rows.length > 0;
-  const dir = join(__dirname, '../../supabase/migrations');
+  const dir = join(__dirname, '../supabase/migrations');
   for (const f of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
     if (f.includes('supabase') && !hasAuth) {
       console.log(`skip  ${f} (no auth schema)`);

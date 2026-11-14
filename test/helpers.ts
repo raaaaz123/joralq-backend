@@ -27,7 +27,7 @@ export async function resetDb() {
   const c = new Client({ connectionString: TEST_DB });
   await c.connect();
   await c.query('drop schema public cascade; create schema public;');
-  await c.query(readFileSync(join(__dirname, '../../supabase/migrations/001_schema.sql'), 'utf8'));
+  await c.query(readFileSync(join(__dirname, '../supabase/migrations/001_schema.sql'), 'utf8'));
   await c.end();
 }
 

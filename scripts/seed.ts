@@ -1,7 +1,8 @@
 /**
  * Creates demo accounts in Supabase Auth plus a sample quiz with a few
  * completed attempts, so the leaderboard and analytics have data.
- * Safe to re-run. Needs DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+ * Safe to re-run. Needs DATABASE_URL; uses the Supabase admin API when
+ * SUPABASE_SERVICE_ROLE_KEY is set, otherwise creates the auth users in SQL.
  */
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
@@ -31,26 +32,60 @@ const QUIZ = {
 // Pre-completed attempts (number of correct answers). Sam and Noah stay pending.
 const DONE: Record<string, number> = { 'aisha@demo.jora': 5, 'leo@demo.jora': 4, 'maya@demo.jora': 4 };
 
+/**
+ * Without a service-role key, create the confirmed auth user straight in the
+ * auth schema (the DB owner can write it). Same shape Supabase's admin API
+ * produces: bcrypt password, confirmed email, metadata, and an email identity.
+ */
+async function createAuthUserSql(db: Client, u: (typeof USERS)[number]): Promise<string> {
+  const found = await db.query('select id from auth.users where email = $1', [u.email]);
+  const id: string = found.rowCount ? found.rows[0].id : (await db.query(
+    `insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+       confirmation_token, recovery_token, email_change, email_change_token_new, email_change_token_current,
+       phone_change, phone_change_token, reauthentication_token)
+     values ('00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated', $1,
+       extensions.crypt($2, extensions.gen_salt('bf')), now(),
+       '{"provider":"email","providers":["email"]}', $3, now(), now(), '', '', '', '', '', '', '', '')
+     returning id`,
+    [u.email, PASSWORD, JSON.stringify({ role: u.role, display_name: u.name, email_verified: true })],
+  )).rows[0].id;
+  if (!found.rowCount) console.log(`created ${u.email} (sql)`);
+  await db.query(
+    `insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+     values ($1::text, $3::uuid, $2, 'email', now(), now(), now())
+     on conflict (provider_id, provider) do nothing`,
+    [id, JSON.stringify({ sub: id, email: u.email, email_verified: true }), id],
+  );
+  return id;
+}
+
 async function main() {
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL } = process.env;
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !DATABASE_URL) throw new Error('Missing env, see .env.example');
-  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+  if (!DATABASE_URL) throw new Error('Missing DATABASE_URL, see .env.example');
+  const useAdmin = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && !SUPABASE_SERVICE_ROLE_KEY.startsWith('PASTE'));
   const db = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
   await db.connect();
 
-  const existing = await admin.auth.admin.listUsers({ perPage: 1000 });
-  if (existing.error) throw existing.error;
   const ids: Record<string, string> = {};
+  const admin = useAdmin ? createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } }) : null;
+  const existing = admin ? await admin.auth.admin.listUsers({ perPage: 1000 }) : null;
+  if (existing?.error) throw existing.error;
   for (const u of USERS) {
-    let id = existing.data.users.find((x) => x.email === u.email)?.id;
-    if (!id) {
-      const { data, error } = await admin.auth.admin.createUser({
-        email: u.email, password: PASSWORD, email_confirm: true,
-        user_metadata: { role: u.role, display_name: u.name },
-      });
-      if (error) throw error;
-      id = data.user.id;
-      console.log(`created ${u.email}`);
+    let id: string | undefined;
+    if (admin) {
+      id = existing!.data.users.find((x) => x.email === u.email)?.id;
+      if (!id) {
+        const { data, error } = await admin.auth.admin.createUser({
+          email: u.email, password: PASSWORD, email_confirm: true,
+          user_metadata: { role: u.role, display_name: u.name },
+        });
+        if (error) throw error;
+        id = data.user.id;
+        console.log(`created ${u.email}`);
+      }
+    } else {
+      id = await createAuthUserSql(db, u);
     }
     ids[u.email] = id;
     await db.query(
