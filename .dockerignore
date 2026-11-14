@@ -1,0 +1,7 @@
+node_modules
+node_modules.nosync
+dist
+.env
+.env.*
+!.env.example
+test
