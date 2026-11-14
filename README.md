@@ -1,4 +1,4 @@
-# joralq.ai: quiz-based learning and analytics
+# JoraIQ.AI: quiz-based learning and analytics
 
 Two repositories: [joralq-backend](https://github.com/raaaaz123/joralq-backend) (NestJS API, database migrations, tests) and [joralq-frontend](https://github.com/raaaaz123/joralq-frontend) (Next.js app). Clone both side by side as `backend/` and `frontend/` to follow the paths below.
 
@@ -192,4 +192,6 @@ Also covered: 401 without a session, answer key never sent before submission, te
 * No quiz editing, deletion, time limits, question shuffling or draft saving mid-attempt (answers live in page state until submit).
 * No pagination on student or quiz lists (fine for class-sized data).
 * No password reset flow in the UI (Supabase supports it; not wired up).
+* After logout, the API can keep accepting that access token for up to 60 s because of the token-check cache. Lowering `TTL_MS` in `token-verifier.ts` trades this window for more calls to Supabase Auth.
+* No rate limiting on the API; put it behind the hosting platform's limits or add `@nestjs/throttler` before real traffic.
 * No frontend tests; the automated tests cover the API.
